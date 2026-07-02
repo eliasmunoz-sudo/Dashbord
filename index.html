@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>DESPEGA · Mapa de Centros Escolares</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root{
+    --navy:#173A5E;
+    --navy-dark:#0F2740;
+    --teal:#2A9D8F;
+    --amber:#E9A03B;
+    --bg:#F4F6F8;
+    --panel:#FFFFFF;
+    --line:#E2E6EA;
+    --text:#1F2933;
+    --muted:#6B7684;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:'Segoe UI',Inter,Arial,sans-serif;
+    background:var(--bg); color:var(--text); height:100vh; overflow:hidden;
+  }
+  .app{ display:flex; flex-direction:column; height:100vh; }
+
+  /* TOP BAR */
+  .topbar{
+    background:var(--navy); color:#fff; padding:10px 16px;
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    border-bottom:3px solid var(--teal);
+  }
+  .topbar h1{ font-size:16px; margin:0; font-weight:700; letter-spacing:.3px; margin-right:8px;}
+  .topbar .sub{ font-size:11px; color:#B9C6D4; margin-right:16px; }
+  .filters{ display:flex; gap:8px; flex-wrap:wrap; flex:1; }
+  .filters input, .filters select{
+    padding:7px 10px; border-radius:8px; border:1px solid transparent;
+    font-size:13px; background:#fff; color:var(--text); min-width:140px;
+  }
+  .filters input{ min-width:180px; }
+  .btn{
+    padding:7px 12px; border-radius:8px; border:none; cursor:pointer;
+    font-size:13px; font-weight:600; background:var(--teal); color:#fff;
+  }
+  .btn.ghost{ background:transparent; border:1px solid #4C6A85; color:#fff; }
+  .btn:hover{ filter:brightness(1.08); }
+  .status-pill{
+    font-size:11px; padding:4px 10px; border-radius:20px; background:#0F2740; color:#B9C6D4;
+  }
+  .status-pill.ok{ background:#1E4D3A; color:#8FE3B8; }
+  .status-pill.err{ background:#5A2020; color:#F3A6A6; }
+
+  /* MAIN LAYOUT */
+  .main{ flex:1; display:flex; overflow:hidden; }
+  .sidebar{
+    width:340px; min-width:340px; background:var(--panel); border-right:1px solid var(--line);
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  .sidebar-header{
+    padding:12px 14px; border-bottom:1px solid var(--line); font-size:12px; color:var(--muted);
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .sidebar-header b{ color:var(--text); font-size:13px; }
+  .school-list{ flex:1; overflow-y:auto; }
+  .school-card{
+    padding:12px 14px; border-bottom:1px solid var(--line); cursor:pointer; transition:background .15s;
+  }
+  .school-card:hover{ background:#F0F4F7; }
+  .school-card.active{ background:#E7F1F0; border-left:4px solid var(--teal); }
+  .school-card .name{ font-weight:700; font-size:13.5px; color:var(--navy-dark); }
+  .school-card .meta{ font-size:11.5px; color:var(--muted); margin-top:3px; }
+  .school-card .count{
+    display:inline-block; margin-top:6px; font-size:11px; background:var(--navy); color:#fff;
+    padding:2px 8px; border-radius:12px;
+  }
+  .school-card .count.warn{ background:var(--amber); }
+
+  .map-area{ flex:1; position:relative; }
+  #map{ height:100%; width:100%; }
+
+  /* DETAIL PANEL */
+  .detail{
+    position:absolute; top:14px; right:14px; width:320px; max-height:calc(100% - 28px);
+    background:var(--panel); border-radius:var(--radius); box-shadow:0 8px 24px rgba(15,39,64,.18);
+    overflow:hidden; display:none; flex-direction:column; z-index:500;
+  }
+  .detail.show{ display:flex; }
+  .detail-head{
+    background:var(--navy); color:#fff; padding:12px 14px; display:flex; justify-content:space-between; align-items:flex-start;
+  }
+  .detail-head .t{ font-size:14px; font-weight:700; }
+  .detail-head .s{ font-size:11px; color:#B9C6D4; margin-top:2px; }
+  .detail-head button{ background:none; border:none; color:#fff; font-size:16px; cursor:pointer; }
+  .detail-body{ padding:10px 14px; overflow-y:auto; }
+  .person-row{
+    padding:8px 0; border-bottom:1px solid var(--line); font-size:13px;
+  }
+  .person-row .n{ font-weight:600; }
+  .person-row .r{ font-size:11.5px; color:var(--teal); font-weight:600; }
+  .person-row .d{ font-size:11.5px; color:var(--muted); }
+
+  /* SETTINGS MODAL */
+  .modal-bg{
+    position:fixed; inset:0; background:rgba(15,39,64,.55); display:none;
+    align-items:center; justify-content:center; z-index:1000;
+  }
+  .modal-bg.show{ display:flex; }
+  .modal{
+    background:#fff; border-radius:var(--radius); padding:22px; width:420px; max-width:92vw;
+  }
+  .modal h2{ margin:0 0 6px; font-size:16px; color:var(--navy-dark); }
+  .modal p{ font-size:12.5px; color:var(--muted); margin:0 0 14px; line-height:1.5; }
+  .modal label{ font-size:12px; font-weight:600; color:var(--text); display:block; margin-bottom:4px; }
+  .modal input{
+    width:100%; padding:9px 10px; border-radius:8px; border:1px solid var(--line); margin-bottom:12px; font-size:13px;
+  }
+  .modal .row{ display:flex; gap:10px; justify-content:flex-end; }
+  .modal .btn.secondary{ background:var(--line); color:var(--text); }
+
+  .empty-state{ padding:30px 16px; text-align:center; color:var(--muted); font-size:13px; }
+  .legend{
+    position:absolute; bottom:14px; left:14px; background:#fff; padding:10px 12px; border-radius:8px;
+    box-shadow:0 4px 12px rgba(15,39,64,.15); font-size:12px; z-index:400;
+  }
+  .legend div{ display:flex; align-items:center; gap:6px; margin-top:4px; }
+  .legend .dot{ width:12px; height:12px; border-radius:50%; display:inline-block; }
+  .loading-overlay{
+    position:absolute; inset:0; background:rgba(244,246,248,.85); display:none;
+    align-items:center; justify-content:center; flex-direction:column; gap:8px; z-index:600; font-size:13px; color:var(--navy);
+  }
+  .loading-overlay.show{ display:flex; }
+  .spinner{
+    width:26px; height:26px; border:3px solid var(--line); border-top-color:var(--teal); border-radius:50%;
+    animation:spin 0.8s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  .divicon-ce{
+    background:var(--navy); color:#fff; border-radius:50% 50% 50% 0; width:26px; height:26px;
+    display:flex; align-items:center; justify-content:center; transform:rotate(-45deg);
+    box-shadow:0 2px 6px rgba(0,0,0,.35); border:2px solid #fff;
+  }
+  .divicon-ce span{ transform:rotate(45deg); font-size:12px; }
+  .divicon-p{
+    background:var(--amber); color:#fff; border-radius:50%; width:16px; height:16px;
+    display:flex; align-items:center; justify-content:center; font-size:9px; border:2px solid #fff;
+    box-shadow:0 2px 5px rgba(0,0,0,.3);
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <h1>DESPEGA</h1>
+    <div class="sub">Mapa de Centros Escolares y Personal</div>
+    <div class="filters">
+      <input type="text" id="fSearch" placeholder="Buscar CE, código o persona...">
+      <select id="fDepto"><option value="">Departamento (todos)</option></select>
+      <select id="fDistritoCE"><option value="">Distrito del CE (todos)</option></select>
+      <select id="fRol"><option value="">Rol (todos)</option></select>
+    </div>
+    <span class="status-pill" id="statusPill">Sin conectar</span>
+    <button class="btn ghost" id="btnSettings">⚙ Conectar Sheet</button>
+    <button class="btn" id="btnRefresh">↻ Actualizar</button>
+  </div>
+
+  <div class="main">
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <b id="sidebarCount">0 Centros Escolares</b>
+        <span>Clic para ver detalle</span>
+      </div>
+      <div class="school-list" id="schoolList">
+        <div class="empty-state">Conecta tu Google Sheet para ver los centros escolares aquí.</div>
+      </div>
+    </div>
+
+    <div class="map-area">
+      <div id="map"></div>
+      <div class="legend">
+        <div><span class="dot" style="background:var(--navy)"></span> Centro Escolar</div>
+        <div><span class="dot" style="background:var(--amber)"></span> Personal asignado</div>
+      </div>
+      <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div id="loadingText">Cargando datos...</div>
+      </div>
+      <div class="detail" id="detailPanel">
+        <div class="detail-head">
+          <div>
+            <div class="t" id="detailTitle">—</div>
+            <div class="s" id="detailSub">—</div>
+          </div>
+          <button id="detailClose">✕</button>
+        </div>
+        <div class="detail-body" id="detailBody"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h2>Conectar Google Sheet</h2>
+    <p>Pega la URL de tu aplicación web de Apps Script (termina en <code>/exec</code>) y la clave (TOKEN) que definiste en el script.</p>
+    <label>URL del Web App</label>
+    <input type="text" id="inputUrl" placeholder="https://script.google.com/macros/s/XXXXX/exec">
+    <label>Clave (key)</label>
+    <input type="text" id="inputKey" placeholder="DESPEGA_2026_CAMBIAME">
+    <div class="row">
+      <button class="btn secondary" id="modalCancel">Cancelar</button>
+      <button class="btn" id="modalSave">Guardar y conectar</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function(){
+  const STORAGE_KEY = 'despega_config';
+  let CONFIG = { url:'', key:'' };
+  let RAW_ROWS = [];
+  let GROUPS = {};          // codigo -> {ce, codigo, departamento, distritoCE, personas:[...], lat, lng}
+  let GEOCODE_CACHE = {};   // nombreNormalizado -> {lat,lng} | null
+  let map, markersLayer;
+  let activeCodigo = null;
+
+  const el = (id)=>document.getElementById(id);
+
+  // ---------- Normalización ----------
+  function normKey(s){
+    return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .toLowerCase().replace(/[^a-z0-9]/g,'');
+  }
+  function pick(row, candidates){
+    const normRow = {};
+    Object.keys(row).forEach(k=> normRow[normKey(k)] = row[k]);
+    // 1) coincidencia exacta
+    for(const c of candidates){
+      if(normRow[c] !== undefined && normRow[c] !== '') return normRow[c];
+    }
+    // 2) coincidencia parcial (por si el encabezado tiene palabras extra, ej. "Personal Asignado")
+    const rowKeys = Object.keys(normRow);
+    for(const c of candidates){
+      if(c.length < 5) continue; // evita falsos positivos con términos cortos (ce, rol)
+      const match = rowKeys.find(rk => rk.includes(c) || c.includes(rk));
+      if(match && normRow[match] !== '') return normRow[match];
+    }
+    return '';
+  }
+  const FIELD_MAP = {
+    ce: ['ce','centroescolar','centro','nombrece'],
+    codigo: ['codigo','codigoce','codce'],
+    departamento: ['departamentoce','departamento','depto'],
+    distritoCE: ['distritoce','municipioce','distritolugar','lugarce','distrito','municipio','lugar','ubicacion'],
+    nombrePersonal: ['nombrepersonal','personal','nombretutor','nombre'],
+    rol: ['rol','cargo','puesto'],
+    distritoPersonal: ['distritopersonal','municipiopersonal','distritotutor','residenciapersonal','domiciliopersonal']
+  };
+  function mapRow(row){
+    return {
+      ce: pick(row, FIELD_MAP.ce),
+      codigo: String(pick(row, FIELD_MAP.codigo) || pick(row, FIELD_MAP.ce)),
+      departamento: pick(row, FIELD_MAP.departamento),
+      distritoCE: pick(row, FIELD_MAP.distritoCE),
+      nombrePersonal: pick(row, FIELD_MAP.nombrePersonal),
+      rol: pick(row, FIELD_MAP.rol),
+      distritoPersonal: pick(row, FIELD_MAP.distritoPersonal)
+    };
+  }
+
+  // ---------- Config storage ----------
+  async function loadConfig(){
+    try{
+      const res = await window.storage.get(STORAGE_KEY, false);
+      if(res && res.value){ CONFIG = JSON.parse(res.value); }
+    }catch(e){ /* no config yet */ }
+  }
+  async function saveConfig(url, key){
+    CONFIG = { url, key };
+    try{ await window.storage.set(STORAGE_KEY, JSON.stringify(CONFIG), false); }catch(e){ console.error(e); }
+  }
+
+  // ---------- JSONP fetch (evita CORS de Apps Script) ----------
+  function fetchJSONP(url){
+    return new Promise((resolve, reject)=>{
+      const cbName = 'cb_' + Date.now() + '_' + Math.floor(Math.random()*10000);
+      const timeout = setTimeout(()=>{ cleanup(); reject(new Error('Tiempo de espera agotado')); }, 15000);
+      function cleanup(){
+        clearTimeout(timeout);
+        delete window[cbName];
+        if(script.parentNode) script.parentNode.removeChild(script);
+      }
+      window[cbName] = (data)=>{ cleanup(); resolve(data); };
+      const sep = url.includes('?') ? '&' : '?';
+      const script = document.createElement('script');
+      script.src = url + sep + 'callback=' + cbName + '&_=' + Date.now();
+      script.onerror = ()=>{ cleanup(); reject(new Error('No se pudo cargar la URL')); };
+      document.body.appendChild(script);
+    });
+  }
+
+  // ---------- Geocoding (Nominatim, con cola y caché) ----------
+  let geoQueue = Promise.resolve();
+  function geocode(place){
+    const key = normKey(place);
+    if(!place) return Promise.resolve(null);
+    if(GEOCODE_CACHE[key] !== undefined) return Promise.resolve(GEOCODE_CACHE[key]);
+    geoQueue = geoQueue.then(()=> new Promise(resolve=>{
+      const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&country=El%20Salvador&q=' + encodeURIComponent(place + ', El Salvador');
+      fetch(url, { headers:{ 'Accept-Language':'es' } })
+        .then(r=> r.json())
+        .then(data=>{
+          let coord = null;
+          if(data && data.length){ coord = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }; }
+          GEOCODE_CACHE[key] = coord;
+          setTimeout(()=> resolve(coord), 1000); // respeta 1 req/seg
+        })
+        .catch(()=>{ GEOCODE_CACHE[key] = null; resolve(null); });
+    }));
+    return geoQueue;
+  }
+
+  // ---------- Map ----------
+  function initMap(){
+    map = L.map('map', { zoomControl:true }).setView([13.7942, -88.8965], 9); // centro El Salvador
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors', maxZoom:18
+    }).addTo(map);
+    markersLayer = L.layerGroup().addTo(map);
+  }
+  function iconCE(){
+    return L.divIcon({ className:'', html:'<div class="divicon-ce"><span>🏫</span></div>', iconSize:[26,26], iconAnchor:[13,26] });
+  }
+  function iconPersonal(){
+    return L.divIcon({ className:'', html:'<div class="divicon-p"></div>', iconSize:[16,16], iconAnchor:[8,8] });
+  }
+  function jitter(lat,lng, seed){
+    const a = (seed * 12.9898) % 1;
+    const b = (seed * 78.233) % 1;
+    return [ lat + (a-0.5)*0.01, lng + (b-0.5)*0.01 ];
+  }
+
+  // ---------- Data pipeline ----------
+  function buildGroups(rows){
+    const groups = {};
+    rows.forEach(r=>{
+      const m = mapRow(r);
+      if(!m.ce && !m.codigo) return;
+      const key = m.codigo || m.ce;
+      if(!groups[key]){
+        groups[key] = { ce:m.ce, codigo:m.codigo, departamento:m.departamento, distritoCE:m.distritoCE, personas:[] };
+      }
+      if(m.nombrePersonal){
+        groups[key].personas.push({ nombre:m.nombrePersonal, rol:m.rol, distrito:m.distritoPersonal });
+      }
+    });
+    return groups;
+  }
+
+  function populateFilterOptions(groups){
+    const deptos = new Set(), distritos = new Set(), roles = new Set();
+    Object.values(groups).forEach(g=>{
+      if(g.departamento) deptos.add(g.departamento);
+      if(g.distritoCE) distritos.add(g.distritoCE);
+      g.personas.forEach(p=>{ if(p.rol) roles.add(p.rol); });
+    });
+    fillSelect('fDepto', deptos, 'Departamento (todos)');
+    fillSelect('fDistritoCE', distritos, 'Distrito del CE (todos)');
+    fillSelect('fRol', roles, 'Rol (todos)');
+  }
+  function fillSelect(id, set, placeholder){
+    const sel = el(id);
+    const current = sel.value;
+    sel.innerHTML = '<option value="">'+placeholder+'</option>';
+    Array.from(set).sort().forEach(v=>{
+      const o = document.createElement('option'); o.value=v; o.textContent=v; sel.appendChild(o);
+    });
+    if(Array.from(set).includes(current)) sel.value = current;
+  }
+
+  function getFiltered(){
+    const q = normKey(el('fSearch').value);
+    const depto = el('fDepto').value;
+    const distritoCE = el('fDistritoCE').value;
+    const rol = el('fRol').value;
+    return Object.values(GROUPS).filter(g=>{
+      if(depto && g.departamento !== depto) return false;
+      if(distritoCE && g.distritoCE !== distritoCE) return false;
+      if(rol && !g.personas.some(p=>p.rol===rol)) return false;
+      if(q){
+        const hay = normKey(g.ce+' '+g.codigo+' '+g.personas.map(p=>p.nombre).join(' '));
+        if(!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }
+
+  function renderSchoolList(){
+    const list = getFiltered();
+    el('sidebarCount').textContent = list.length + (list.length===1?' Centro Escolar':' Centros Escolares');
+    const container = el('schoolList');
+    if(!list.length){ container.innerHTML = '<div class="empty-state">No hay resultados con esos filtros.</div>'; return; }
+    container.innerHTML = '';
+    list.sort((a,b)=> (a.ce||'').localeCompare(b.ce||'')).forEach(g=>{
+      const card = document.createElement('div');
+      card.className = 'school-card' + (g.codigo===activeCodigo ? ' active':'');
+      card.innerHTML = `
+        <div class="name">${g.ce || '(sin nombre)'}</div>
+        <div class="meta">Código ${g.codigo || '—'} · ${g.distritoCE || 'sin distrito'} ${g.departamento? '· '+g.departamento:''}</div>
+        <span class="count ${g.personas.length===0?'warn':''}">${g.personas.length} persona(s) asignada(s)</span>
+      `;
+      card.onclick = ()=> selectSchool(g.codigo);
+      container.appendChild(card);
+    });
+  }
+
+  async function renderMap(){
+    markersLayer.clearLayers();
+    const list = getFiltered();
+    const bounds = [];
+    let seed = 1;
+    for(const g of list){
+      if(!g.distritoCE) continue;
+      const coord = await geocode(g.distritoCE);
+      if(!coord) continue;
+      g.lat = coord.lat; g.lng = coord.lng;
+      const m = L.marker([coord.lat, coord.lng], { icon: iconCE() }).addTo(markersLayer);
+      m.bindTooltip(g.ce || g.codigo, {direction:'top'});
+      m.on('click', ()=> selectSchool(g.codigo));
+      bounds.push([coord.lat, coord.lng]);
+
+      for(const p of g.personas){
+        if(!p.distrito) continue;
+        const pcoord = await geocode(p.distrito);
+        if(!pcoord) continue;
+        const [lat,lng] = jitter(pcoord.lat, pcoord.lng, seed++);
+        const pm = L.marker([lat,lng], { icon: iconPersonal() }).addTo(markersLayer);
+        pm.bindTooltip(`${p.nombre} (${p.rol||'personal'}) — ${p.distrito}`, {direction:'top'});
+      }
+    }
+    if(bounds.length){ map.fitBounds(bounds, {padding:[40,40], maxZoom:12}); }
+  }
+
+  function selectSchool(codigo){
+    activeCodigo = codigo;
+    renderSchoolList();
+    const g = GROUPS[codigo];
+    if(!g) return;
+    el('detailTitle').textContent = g.ce || codigo;
+    el('detailSub').textContent = `Código ${g.codigo} · ${g.distritoCE||'—'} ${g.departamento?'· '+g.departamento:''}`;
+    const body = el('detailBody');
+    if(!g.personas.length){
+      body.innerHTML = '<div class="empty-state">Sin personal asignado registrado.</div>';
+    } else {
+      body.innerHTML = g.personas.map(p=>`
+        <div class="person-row">
+          <div class="n">${p.nombre}</div>
+          <div class="r">${p.rol||'Sin rol especificado'}</div>
+          <div class="d">📍 ${p.distrito||'Sin distrito registrado'}</div>
+        </div>`).join('');
+    }
+    el('detailPanel').classList.add('show');
+    if(g.lat && g.lng) map.setView([g.lat,g.lng], 13);
+  }
+
+  // ---------- Load flow ----------
+  function setStatus(text, cls){
+    const pill = el('statusPill');
+    pill.textContent = text;
+    pill.className = 'status-pill' + (cls?(' '+cls):'');
+  }
+  function showLoading(text){
+    el('loadingText').textContent = text;
+    el('loadingOverlay').classList.add('show');
+  }
+  function hideLoading(){ el('loadingOverlay').classList.remove('show'); }
+
+  async function loadData(){
+    if(!CONFIG.url){ openModal(); return; }
+    setStatus('Conectando...', '');
+    showLoading('Descargando datos del Sheet...');
+    try{
+      const sep = CONFIG.url.includes('?') ? '&' : '?';
+      const fullUrl = CONFIG.url + sep + 'key=' + encodeURIComponent(CONFIG.key||'');
+      const data = await fetchJSONP(fullUrl);
+      if(data && data.error){ throw new Error(data.error); }
+      RAW_ROWS = Array.isArray(data) ? data : [];
+      GROUPS = buildGroups(RAW_ROWS);
+      populateFilterOptions(GROUPS);
+      renderSchoolList();
+      setStatus(Object.keys(GROUPS).length + ' CE cargados', 'ok');
+      showLoading('Ubicando centros escolares en el mapa...');
+      await renderMap();
+    }catch(err){
+      console.error(err);
+      setStatus('Error de conexión', 'err');
+      el('schoolList').innerHTML = '<div class="empty-state">No se pudo conectar. Revisa la URL y la clave en ⚙ Conectar Sheet.<br><br>Detalle: '+ (err.message||err) +'</div>';
+    }finally{
+      hideLoading();
+    }
+  }
+
+  // ---------- Modal ----------
+  function openModal(){
+    el('inputUrl').value = CONFIG.url||'';
+    el('inputKey').value = CONFIG.key||'';
+    el('modalBg').classList.add('show');
+  }
+  function closeModal(){ el('modalBg').classList.remove('show'); }
+
+  // ---------- Events ----------
+  el('btnSettings').onclick = openModal;
+  el('modalCancel').onclick = closeModal;
+  el('modalSave').onclick = async ()=>{
+    const url = el('inputUrl').value.trim();
+    const key = el('inputKey').value.trim();
+    if(!url){ alert('Pega la URL del Web App.'); return; }
+    await saveConfig(url, key);
+    closeModal();
+    loadData();
+  };
+  el('btnRefresh').onclick = loadData;
+  el('detailClose').onclick = ()=>{ el('detailPanel').classList.remove('show'); activeCodigo=null; renderSchoolList(); };
+  ['fSearch','fDepto','fDistritoCE','fRol'].forEach(id=>{
+    el(id).addEventListener('input', ()=>{ renderSchoolList(); renderMap(); });
+  });
+
+  // ---------- Init ----------
+  (async function init(){
+    initMap();
+    await loadConfig();
+    if(CONFIG.url) loadData(); else openModal();
+  })();
+})();
+</script>
+</body>
+</html>
